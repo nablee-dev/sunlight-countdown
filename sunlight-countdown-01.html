@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MV Solar Countdown (Minimal)</title>
+    <!-- Include SunCalc.js library for dynamic solar calculations. This is essential and kept. -->
+    <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.min.js"></script>
+    <style>
+        /* Minimal, highly compatible CSS for basic display */
+        body {
+            /* INCREASED FONT SIZE for readability on small, e-ink screen */
+            margin: 20px;
+            font-family: sans-serif;
+            font-size: 24px; 
+            line-height: 1.5;
+            color: #333;
+            background-color: #f0f0f0;
+        }
+        /* Removed h1 and p styling since the elements themselves are removed from HTML */
+        
+        .header-info {
+            text-align: center;
+            /* ADDED: Space above the header for better positioning */
+            margin-top: 100px; 
+            margin-bottom: 20px;
+            /* Border removed to make the UI cleaner */
+            padding-bottom: 10px;
+        }
+        .current-time-display {
+            /* Ensuring the current time display is large and prominent */
+            font-size: 1.5em; 
+            font-weight: bold;
+        }
+        .card-container {
+            display: flex;
+            flex-direction: column;
+            /* Removed gap: 25px; */
+        }
+        .card {
+            border: 1px solid #ccc;
+            padding: 20px; 
+            border-radius: 5px;
+            background-color: #ffffff;
+            text-align: center;
+            /* ADDED: Explicit bottom margin for reliable spacing between cards */
+            margin-bottom: 25px; 
+        }
+        /* Remove margin-bottom from the last card to prevent extra space at the bottom */
+        .card:last-child {
+            margin-bottom: 0;
+        }
+        .countdown-title {
+            /* Increased size for Next Sunrise/Sunset title */
+            font-size: 1.6em; 
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .countdown-digits {
+            /* Dramatically increased size for the main timer digits */
+            font-size: 3.5em; 
+            font-family: monospace;
+            font-weight: bold;
+            display: block;
+            margin-top: 5px;
+        }
+        .target-time {
+            /* Increased size for Target time */
+            font-size: 1.2em; 
+            color: #666;
+            margin-top: 5px;
+        }
+        .message-status {
+            /* Increased size for status messages */
+            font-size: 1.1em; 
+            font-weight: bold;
+            color: green;
+        }
+        .message-passed {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Container -->
+    <div>
+        <header class="header-info">
+            <!-- Removed H1 and P for Solar Countdown and Location -->
+            <div id="current-time-display" class="current-time-display">
+                
+            </div>
+            <!-- Removed Temporary Debug Output Area -->
+        </header>
+
+        <!-- Countdown Cards Container -->
+        <div class="card-container">
+            
+            <!-- Sunrise Card -->
+            <div id="sunrise-card" class="card">
+                <div class="countdown-title">Next Sunrise</div>
+                <p id="sunrise-target" class="target-time">Loading Target Time...</p>
+                <span class="countdown-digits" id="sunrise-countdown">
+                    --h --m
+                </span>
+                <p id="sunrise-message" class="message-status">Time Remaining</p>
+            </div>
+
+            <!-- Sunset Card -->
+            <div id="sunset-card" class="card">
+                <div class="countdown-title">Next Sunset</div>
+                <p id="sunset-target" class="target-time">Loading Target Time...</p>
+                <span class="countdown-digits" id="sunset-countdown">
+                    --h --m
+                </span>
+                <p id="sunset-message" class="message-status">Time Remaining</p>
+            </div>
+
+        </div>
+
+        <!-- Removed Footer Text -->
+    </div>
+
+    <script>
+        // --- Configuration ---
+        var MV_LAT = 37.3861;
+        var MV_LON = -122.0839;
+
+        // --- DOM Elements ---
+        var currentTimeEl = document.getElementById('current-time-display');
+        var sunriseTargetEl = document.getElementById('sunrise-target');
+        var sunriseCountdownEl = document.getElementById('sunrise-countdown');
+        var sunsetTargetEl = document.getElementById('sunset-target');
+        var sunsetCountdownEl = document.getElementById('sunset-countdown');
+        var sunriseMessageEl = document.getElementById('sunrise-message');
+        var sunsetMessageEl = document.getElementById('sunset-message');
+
+        /**
+         * Outputs a debug message to the console.
+         * @param {string} message 
+         */
+        function logDebug(message) {
+            if (typeof console !== 'undefined' && console.log) {
+                console.log('DEBUG: ' + message);
+            }
+        }
+
+        /**
+         * Helper to format a Date object to "HH:MM" (24-hour format) for maximum compatibility.
+         * FIX: Applies the same UTC-7 offset logic as formatCurrentTime.
+         * @param {Date} date - The date object.
+         * @returns {string} Formatted time string.
+         */
+        function formatTargetTime(date) {
+            if (!date || isNaN(date.getTime())) return 'N/A';
+            var pad = function(num) { return (num < 10 ? '0' : '') + num; };
+            
+            // Use UTC getters, as the Kindle browser seems to treat local getters as UTC for all Date objects.
+            var hours = date.getUTCHours();
+            var minutes = date.getUTCMinutes();
+            
+            // Apply Manual UTC-7 offset (PDT/PST) to align with MV local time
+            var OFFSET_HOURS = -7; 
+            hours += OFFSET_HOURS;
+
+            // Handle hour rollover backwards/forwards
+            if (hours < 0) {
+                hours += 24;
+            } else if (hours >= 24) {
+                hours -= 24;
+            }
+
+            hours = pad(hours);
+            minutes = pad(minutes);
+            return hours + ':' + minutes;
+        }
+
+        /**
+         * Helper to format the current date/time to "Day, Month DD, YYYY, HH:MM" for maximum compatibility.
+         * FIX: Manually adjusts the time based on the likely scenario that the Kindle browser reports time in UTC,
+         * but the system clock is set to PDT (UTC-7). We apply a -7 hour offset.
+         * @param {Date} date - The current date object.
+         * @returns {string} Formatted time string, manually offset to PDT/PST.
+         */
+        function formatCurrentTime(date) {
+            var pad = function(num) { return (num < 10 ? '0' : '') + num; };
+            var DAYS_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            var MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            
+            // Apply Manual UTC-7 offset (PDT/PST) to align with MV local time
+            var OFFSET_HOURS = -7; 
+            
+            // Calculate the actual local time in milliseconds
+            var localTimeMs = date.getTime() + (OFFSET_HOURS * 60 * 60 * 1000);
+            var localDate = new Date(localTimeMs);
+
+            // Extract date components using UTC getters on the manually shifted date object
+            var dayName = DAYS_FULL[localDate.getUTCDay()];
+            var monthName = MONTHS_FULL[localDate.getUTCMonth()];
+            var dayOfMonth = localDate.getUTCDate();
+            var year = localDate.getUTCFullYear();
+            
+            // Extract time components
+            var hours = pad(localDate.getUTCHours());
+            var minutes = pad(localDate.getUTCMinutes());
+
+            // Format: "Saturday, October 11, 2025, 12:10"
+            return dayName + ', ' + monthName + ' ' + dayOfMonth + ', ' + year + ', ' + hours + ':' + minutes;
+        }
+
+        /**
+         * Formats milliseconds into H:M string (seconds removed).
+         * @param {number} ms - Time difference in milliseconds.
+         * @returns {string} Formatted string "HHh MMm" or a message if time is up.
+         */
+        function formatTimeRemaining(ms) {
+            if (ms < 0) {
+                return 'Passed!';
+            }
+            var totalSeconds = Math.floor(ms / 1000);
+            var totalMinutes = Math.floor(totalSeconds / 60);
+            var minutes = totalMinutes % 60;
+            var hours = Math.floor(totalMinutes / 60);
+
+            // Helper to pad single digits
+            var pad = function(num) { return (num < 10 ? '0' : '') + num; };
+
+            // Output format excludes seconds
+            return pad(hours) + 'h ' + pad(minutes) + 'm'; 
+        }
+
+        /**
+         * Calculates the exact Date objects for the next upcoming sunrise and sunset using SunCalc.
+         * @param {Date} now - The current time.
+         * @returns {{nextSunrise: Date, nextSunset: Date}}
+         */
+        function getTargetTimes(now) {
+            var lat = MV_LAT;
+            var lon = MV_LON;
+
+            // Get today's solar times
+            var timesToday = SunCalc.getTimes(now, lat, lon);
+            var timesTomorrow = null;
+
+            var nextSunrise = timesToday.sunrise;
+            var nextSunset = timesToday.sunset;
+
+            // --- Handle Sunrise Rollover ---
+            if (nextSunrise === undefined || now.getTime() >= nextSunrise.getTime()) {
+                if (!timesTomorrow) {
+                    var tomorrow = new Date(now);
+                    tomorrow.setDate(now.getDate() + 1);
+                    timesTomorrow = SunCalc.getTimes(tomorrow, lat, lon);
+                    logDebug("Sunrise passed, checking tomorrow.");
+                }
+                nextSunrise = timesTomorrow.sunrise;
+            }
+
+            // --- Handle Sunset Rollover ---
+            if (nextSunset === undefined || now.getTime() >= nextSunset.getTime()) {
+                if (!timesTomorrow) {
+                    var tomorrow = new Date(now);
+                    tomorrow.setDate(now.getDate() + 1);
+                    timesTomorrow = SunCalc.getTimes(tomorrow, lat, lon);
+                    logDebug("Sunset passed, checking tomorrow.");
+                }
+                nextSunset = timesTomorrow.sunset;
+            }
+            
+            // Check if events are defined (might be undefined in extreme polar latitudes)
+            if (!nextSunrise) {
+                logDebug("Sunrise time could not be calculated. Using fallback.");
+                nextSunrise = new Date(now.getTime() + 86400000); // 24 hours from now as a fallback
+            }
+            if (!nextSunset) {
+                logDebug("Sunset time could not be calculated. Using fallback.");
+                nextSunset = new Date(now.getTime() + 86400000); // 24 hours from now as a fallback
+            }
+
+
+            return { nextSunrise: nextSunrise, nextSunset: nextSunset };
+        }
+
+        /**
+         * Main function to update all countdowns.
+         */
+        function updateCountdowns() {
+            try {
+                var now = new Date();
+                
+                // Use the simplified, compatible formatter with manual UTC offset correction
+                currentTimeEl.textContent = formatCurrentTime(now);
+                logDebug("Clock updated successfully.");
+
+                // Get dynamically calculated target times
+                var times = getTargetTimes(now);
+                var nextSunrise = times.nextSunrise;
+                var nextSunset = times.nextSunset;
+                logDebug("Solar times calculated.");
+
+                // --- Sunrise Countdown ---
+                var timeUntilSunrise = nextSunrise.getTime() - now.getTime();
+                
+                // Use the simplified target time formatter (now corrected for offset)
+                sunriseTargetEl.textContent = 'Target: ' + formatTargetTime(nextSunrise);
+
+                // Update countdown and status
+                if (timeUntilSunrise > 0) {
+                    sunriseCountdownEl.textContent = formatTimeRemaining(timeUntilSunrise);
+                    sunriseMessageEl.textContent = "Time Remaining";
+                    sunriseMessageEl.className = 'message-status'; // Reset classes
+                } else {
+                    sunriseCountdownEl.textContent = 'Passed!';
+                    sunriseMessageEl.textContent = "Updating next target...";
+                    sunriseMessageEl.className = 'message-passed'; // Reset classes
+                }
+
+                // --- Sunset Countdown ---
+                var timeUntilSunset = nextSunset.getTime() - now.getTime();
+
+                // Use the simplified target time formatter (now corrected for offset)
+                sunsetTargetEl.textContent = 'Target: ' + formatTargetTime(nextSunset);
+                
+                // Update countdown and status
+                if (timeUntilSunset > 0) {
+                    sunsetCountdownEl.textContent = formatTimeRemaining(timeUntilSunset);
+                    sunsetMessageEl.textContent = "Time Remaining";
+                    sunsetMessageEl.className = 'message-status'; // Reset classes
+                } else {
+                    sunsetCountdownEl.textContent = 'Passed!';
+                    sunsetMessageEl.textContent = "Updating next target...";
+                    sunsetMessageEl.className = 'message-passed'; // Reset classes
+                }
+
+            } catch (error) {
+                // If an error occurs, log it to the console
+                logDebug('FATAL ERROR: ' + error.name + ' occurred.');
+                // Fallback display
+                currentTimeEl.textContent = "Error calculating time.";
+            }
+        }
+
+        // --- Initialization (Now a standard function call) ---
+        function initializeApp() {
+            logDebug("App starting initialization.");
+            
+            // Check for SunCalc dependency immediately
+            if (typeof SunCalc === 'undefined') {
+                logDebug("FATAL: SunCalc failed to load! Check network.");
+                // Fallback message for user
+                currentTimeEl.textContent = "Error loading solar data.";
+                return;
+            }
+            logDebug("SunCalc loaded successfully. Running first update.");
+            
+            // Set up the initial update and interval check
+            updateCountdowns(); 
+            // Interval is 1 minute (60000ms)
+            setInterval(updateCountdowns, 60000); 
+
+        } 
+
+        // Explicitly call the function to start the app
+        initializeApp();
+    </script>
+</body>
+</html>
+

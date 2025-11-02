@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sunlight Countdown</title>
+    <!-- Removed Tailwind CSS for maximum compatibility -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Include SunCalc.js library for dynamic solar calculations -->
+    <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.min.js"></script>
+    <style>
+        /* Basic, high-compatibility CSS for older browsers and e-ink displays */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000000; /* Pure black background */
+            color: #FFFFFF; /* Pure white text */
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 90vh; /* Use 90vh to avoid scrollbars on some devices */
+            overflow: hidden; /* This will hide any scrollbars */
+            /* ADDED: Hide the mouse cursor */
+            cursor: none;
+        }
+        .main-container {
+            width: 100%;
+            max-width: 800px;
+        }
+        /* New container for the reversed header information */
+        .info-display { 
+            text-align: center;
+            margin-top: 40px; /* Space above the info block */
+        }
+        .info-display h1 {
+            font-size: 36px;
+            font-weight: 800;
+            margin: 0;
+        }
+        .info-display p {
+            font-size: 18px;
+            margin: 8px 0;
+        }
+        #current-time-display {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 16px;
+            margin-bottom: 24px; /* Space below the time box */
+            background-color: #000;
+            padding: 12px;
+            border-radius: 12px;
+            border: 2px solid #FFFFFF;
+            display: inline-block;
+        }
+        .card {
+            background-color: #000;
+            padding: 24px;
+            border-radius: 16px;
+            border: 2px solid #FFFFFF;
+            text-align: center;
+            margin-bottom: 32px; /* Space between cards */
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+        .card-header svg {
+            width: 32px;
+            height: 32px;
+            margin-right: 12px;
+        }
+        .card-header h2 {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 0;
+            margin-right: 10px
+        }
+        .countdown-digits {
+            font-variant-numeric: tabular-nums;
+            font-size: 48px;
+            font-weight: 800;
+            margin: 0;
+        }
+        /* TARGET TIME IS NOW AT THE BOTTOM OF THE CARD */
+        .target-time {
+            margin-top: 24px; /* Added margin to separate it from the duration/elapsed times */
+            font-size: 16px; /* Slightly smaller for footnote effect */
+            /* opacity: 0.8 removed for maximum contrast */
+        }
+        .elapsed-time {
+            font-size: 18px;
+            margin-top: 10px;
+            font-weight: 600;
+        }
+        .status-message {
+            margin-top: 8px;
+            /* HIDDEN: The status message element is kept in HTML but hidden via CSS or JS */
+            display: none; 
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Container -->
+    <div class="main-container">
+
+        <!-- Countdown Cards Grid (The order will be dynamically set by JS) -->
+        <div id="card-display-container">
+            <!-- Sunrise Card (Remaining darkness) -->
+            <div id="sunrise-card" class="card">
+                <div class="card-header">
+                    <!-- Icon for Darkness (Moon) -->
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                    </svg>
+                    <!-- Added ID for dynamic updates -->
+                    <h2 id="sunrise-header">Remaining darkness</h2> 
+                    <!-- Icon for Light (Sun) -->
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                </div>
+                
+                <!-- 1. Countdown Time -->
+                <p class="countdown-digits" id="sunrise-countdown">--h --m</p>
+                
+                <!-- 2. Total Darkness Duration -->
+                <p id="total-darkness-duration" class="elapsed-time" style="display: none;">Total Darkness: --h --m</p>
+                
+                <!-- 3. Time elapsed since sunset -->
+                <p id="time-since-sunset" class="elapsed-time" style="display: none;">--h --m elapsed since sunset</p>
+                <!-- This element is now unused/hidden, but kept for script compatibility -->
+                <p id="sunrise-message" class="status-message"></p>
+
+                <!-- 4. Target Time Label (MOVED TO END) -->
+                <p id="sunrise-target" class="target-time">Darkness ends at: Loading...</p>
+            </div>
+
+            <!-- Sunset Card (Remaining sunlight) -->
+            <div id="sunset-card" class="card">
+                <div class="card-header">
+                    <!-- Icon for Light (Sun) -->
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    <!-- Added ID for dynamic updates -->
+                    <h2 id="sunset-header">Remaining sunlight</h2>
+                    <!-- Icon for Darkness (Moon) -->
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                    </svg>
+                </div>
+                
+                <!-- 1. Countdown Time -->
+                <p class="countdown-digits" id="sunset-countdown">--h --m</p>
+                
+                <!-- 2. Total Sunlight Duration - This is now always visible -->
+                <p id="total-sunlight-duration" class="elapsed-time" style="display: none;">Total Sunlight: --h --m</p>
+                
+                 <!-- 3. Time elapsed since sunrise -->
+                <p id="time-since-sunrise" class="elapsed-time" style="display: none;">--h --m elapsed since sunrise</p>
+                 <!-- This element is now unused/hidden, but kept for script compatibility -->
+                <p id="sunset-message" class="status-message"></p>
+                
+                <!-- 4. Target Time Label (MOVED TO END) -->
+                <p id="sunset-target" class="target-time">Sunlight ends at: Loading...</p>
+            </div>
+        </div>
+
+        <!-- NEW INFO DISPLAY BLOCK -->
+        <div class="info-display">
+             <!-- 1. Current Date/Time Box -->
+            <div id="current-time-display" class="countdown-digits">
+                Loading...
+            </div>
+             <!-- 2. City/Location -->
+            <p>Mountain View, CA (Dynamic Calculation)</p>
+             <!-- 3. Main Label -->
+            <h1>Sunlight Countdown</h1>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Configuration ---
+        // Coordinates for Mountain View, CA
+        var MV_LAT = 37.3861;
+        var MV_LON = -122.0839;
+        // Manual offset for Mountain View (PDT is UTC-7, used for Oct 11, 2025)
+        var PACIFIC_OFFSET_HOURS = -7; 
+
+        // --- DOM Elements ---
+        var currentTimeEl = document.getElementById('current-time-display');
+        var sunriseTargetEl = document.getElementById('sunrise-target');
+        var sunriseCountdownEl = document.getElementById('sunrise-countdown');
+        var sunsetTargetEl = document.getElementById('sunset-target');
+        var sunsetCountdownEl = document.getElementById('sunset-countdown');
+        var cardContainerEl = document.getElementById('card-display-container');
+        var sunriseCardEl = document.getElementById('sunrise-card');
+        var sunsetCardEl = document.getElementById('sunset-card');
+        
+        // New Header Elements
+        var sunriseHeaderEl = document.getElementById('sunrise-header');
+        var sunsetHeaderEl = document.getElementById('sunset-header');
+        
+        // Elapsed Time Elements
+        var timeSinceSunsetEl = document.getElementById('time-since-sunset');
+        var timeSinceSunriseEl = document.getElementById('time-since-sunrise');
+        
+        // Duration Elements
+        var totalDarknessEl = document.getElementById('total-darkness-duration');
+        var totalSunlightEl = document.getElementById('total-sunlight-duration');
+
+
+        /**
+         * Helper function to pad single digits for better compatibility.
+         */
+        function pad(num) {
+            return num < 10 ? '0' + num : String(num);
+        }
+        
+        /**
+         * Returns a Date object representing the correct local time in Mountain View,
+         * compensating for the browser potentially reporting UTC time, by applying
+         * the manual PACIFIC_OFFSET_HOURS to the UTC time components.
+         * We use UTC getters on this manually shifted date to ensure consistent time.
+         * @param {Date} date - The current system Date object.
+         * @returns {Date} The corrected local Date object for the Pacific Timezone.
+         */
+        function getPacificDate(date) {
+            // Calculate the actual local time in milliseconds based on UTC-7 offset
+            var localTimeMs = date.getTime() + (PACIFIC_OFFSET_HOURS * 60 * 60 * 1000);
+            return new Date(localTimeMs);
+        }
+
+        /**
+         * Formats the time part of a Date object (HH:MM:SS or HH:MM).
+         * @param {Date} date - The date object.
+         * @param {boolean} includeSeconds - Whether to include seconds.
+         * @returns {string} Formatted time string (e.g., "15:30:00").
+         */
+        function formatClockTime(date, includeSeconds) {
+            if (!date || isNaN(date.getTime())) return 'N/A';
+            
+            // Get the corrected Pacific Time Date object
+            var pacificDate = getPacificDate(date);
+            
+            var hours = pad(pacificDate.getUTCHours());
+            var minutes = pad(pacificDate.getUTCMinutes());
+            
+            var timeString = hours + ':' + minutes;
+            
+            // Note: Seconds are still calculated but will not be displayed here as requested
+            if (includeSeconds) {
+                var seconds = pad(pacificDate.getUTCSeconds());
+                timeString += ':' + seconds;
+            }
+            return timeString;
+        }
+
+        /**
+         * Formats the date and time for the main clock display.
+         * @param {Date} date - The current system Date object.
+         * @returns {string} Formatted string, e.g., "Sat, Oct 11, 2025 15:30 PDT"
+         */
+        function formatCurrentDateTime(date) {
+            var DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            
+            var pacificDate = getPacificDate(date);
+            
+            var dayName = DAYS_SHORT[pacificDate.getUTCDay()];
+            var monthName = MONTHS_SHORT[pacificDate.getUTCMonth()];
+            var dayOfMonth = pacificDate.getUTCDate();
+            var year = pacificDate.getUTCFullYear();
+            
+            var time = formatClockTime(date, false); 
+            
+            // Format: "Sat, Oct 11, 2025 15:30 PDT"
+            return dayName + ', ' + monthName + ' ' + dayOfMonth + ', ' + year + ' ' + time + ' PDT';
+        }
+
+        /**
+         * Formats milliseconds into H:M string (seconds removed).
+         */
+        function formatTimeRemaining(ms) {
+            if (ms < 0) {
+                // If it's negative, it means something went wrong in calculation, or the time is impossibly far.
+                if (ms < -1000) return 'Error';
+                return 'Passed!';
+            }
+            // Seconds are removed, so we calculate directly to minutes
+            var totalMinutes = Math.floor(ms / (1000 * 60));
+            var minutes = totalMinutes % 60;
+            var hours = Math.floor(totalMinutes / 60);
+
+            return pad(hours) + 'h ' + pad(minutes) + 'm';
+        }
+
+        /**
+         * Calculates the next sunrise and sunset.
+         */
+        function getTargetTimes(now) {
+            var lat = MV_LAT;
+            var lon = MV_LON;
+
+            // Get today's solar times
+            var timesToday = SunCalc.getTimes(now, lat, lon);
+            var timesTomorrow = null;
+
+            var nextSunrise = timesToday.sunrise;
+            var nextSunset = timesToday.sunset;
+
+            // --- Handle Sunrise Rollover ---
+            if (nextSunrise === undefined || now.getTime() >= nextSunrise.getTime()) {
+                if (!timesTomorrow) {
+                    var tomorrow = new Date(now);
+                    tomorrow.setDate(now.getDate() + 1);
+                    timesTomorrow = SunCalc.getTimes(tomorrow, lat, lon);
+                }
+                nextSunrise = timesTomorrow.sunrise;
+            }
+
+            // --- Handle Sunset Rollover ---
+            if (nextSunset === undefined || now.getTime() >= nextSunset.getTime()) {
+                if (!timesTomorrow) {
+                    var tomorrow = new Date(now);
+                    tomorrow.setDate(now.getDate() + 1);
+                    timesTomorrow = SunCalc.getTimes(tomorrow, lat, lon);
+                }
+                nextSunset = timesTomorrow.sunset;
+            }
+            
+            if (!nextSunrise) {
+                console.error("Sunrise time could not be calculated.");
+                nextSunrise = new Date(now.getTime() + 86400000);
+            }
+            if (!nextSunset) {
+                console.error("Sunset time could not be calculated.");
+                nextSunset = new Date(now.getTime() + 86400000);
+            }
+
+            return { nextSunrise: nextSunrise, nextSunset: nextSunset, timesToday: timesToday };
+        }
+
+        /**
+         * Main function to update all countdowns.
+         */
+        function updateCountdowns() {
+            var now = new Date();
+            var nowMs = now.getTime();
+            
+            // 1. Manually format the current time display with PDT offset
+            currentTimeEl.textContent = formatCurrentDateTime(now);
+
+            // 2. Get target times and today's times
+            var targets = getTargetTimes(now);
+            var nextSunrise = targets.nextSunrise;
+            var nextSunset = targets.nextSunset;
+            var timesToday = targets.timesToday;
+            
+            var sunriseTodayMs = timesToday.sunrise.getTime();
+            var sunsetTodayMs = timesToday.sunset.getTime();
+            
+            // Calculate and display Total Sunlight duration (ALWAYS VISIBLE as requested)
+            var totalSunlightMs = sunsetTodayMs - sunriseTodayMs;
+            totalSunlightEl.textContent = 'Total Sunlight: ' + formatTimeRemaining(totalSunlightMs);
+            totalSunlightEl.style.display = 'block';
+
+            // Check if now is between today's sunrise and sunset
+            var isDaytime = (nowMs >= sunriseTodayMs && nowMs < sunsetTodayMs);
+            
+            // 3. Reorder Cards based on time of day and update headers
+            if (isDaytime) {
+                // Daytime: Show Remaining Sunlight first
+                if (cardContainerEl.firstChild !== sunsetCardEl) {
+                    cardContainerEl.innerHTML = '';
+                    cardContainerEl.appendChild(sunsetCardEl);
+                    cardContainerEl.appendChild(sunriseCardEl);
+                }
+                
+                // Update headers (Non-active: Sunrise)
+                sunsetHeaderEl.textContent = "Remaining sunlight"; // Active card remains standard
+                sunriseHeaderEl.textContent = "Upcoming darkness ending in"; // Non-active card gets new title
+
+            } else {
+                // Nighttime: Show Remaining Darkness first
+                if (cardContainerEl.firstChild !== sunriseCardEl) {
+                    cardContainerEl.innerHTML = '';
+                    cardContainerEl.appendChild(sunriseCardEl);
+                    cardContainerEl.appendChild(sunsetCardEl);
+                }
+                
+                // Update headers (Non-active: Sunset)
+                sunriseHeaderEl.textContent = "Remaining darkness"; // Active card remains standard
+                sunsetHeaderEl.textContent = "Upcoming sunlight ending in"; // Non-active card gets new title
+            }
+            
+
+            // 4. Update countdowns
+            
+            // --- Sunrise Countdown (Remaining darkness) ---
+            var timeUntilSunrise = nextSunrise.getTime() - nowMs;
+            
+            // Target time label
+            sunriseTargetEl.textContent = 'Darkness ends at: ' + formatClockTime(nextSunrise, false);
+
+            if (timeUntilSunrise > 0) {
+                sunriseCountdownEl.textContent = formatTimeRemaining(timeUntilSunrise);
+            } else {
+                sunriseCountdownEl.textContent = 'Passed!';
+            }
+
+            // 5. Update Elapsed Time Displays and Durations
+            if (!isDaytime) {
+                // NIGHTTIME LOGIC
+                var lastSunset = null;
+                
+                if (nowMs >= sunsetTodayMs) {
+                    // Case A: Night, after today's sunset. Last sunset was today.
+                    lastSunset = timesToday.sunset;
+                } else {
+                    // Case B: Night, before today's sunrise. Last sunset was yesterday.
+                    var yesterday = new Date(now);
+                    yesterday.setDate(now.getDate() - 1);
+                    var timesYesterday = SunCalc.getTimes(yesterday, MV_LAT, MV_LON);
+                    lastSunset = timesYesterday.sunset;
+                }
+                
+                var timeSinceSunsetMs = nowMs - lastSunset.getTime();
+                
+                // Show Darkness Elapsed
+                timeSinceSunsetEl.textContent = formatTimeRemaining(timeSinceSunsetMs) + ' elapsed since sunset';
+                timeSinceSunsetEl.style.display = 'block';
+
+                // Show Total Darkness Duration
+                var totalDarknessMs = nextSunrise.getTime() - lastSunset.getTime();
+                totalDarknessEl.textContent = 'Total Darkness: ' + formatTimeRemaining(totalDarknessMs);
+                totalDarknessEl.style.display = 'block';
+
+                // Hide daylight elapsed time
+                timeSinceSunriseEl.style.display = 'none';
+
+            } else {
+                // DAYTIME LOGIC
+                var lastSunriseMs = sunriseTodayMs; 
+                var timeSinceSunriseMs = nowMs - lastSunriseMs;
+                
+                // Show Sunlight Elapsed
+                timeSinceSunriseEl.textContent = formatTimeRemaining(timeSinceSunriseMs) + ' elapsed since sunrise';
+                timeSinceSunriseEl.style.display = 'block';
+
+                // Hide darkness elapsed time and total darkness duration
+                timeSinceSunsetEl.style.display = 'none';
+                totalDarknessEl.style.display = 'none';
+            }
+
+
+            // --- Sunset Countdown (Remaining sunlight) ---
+            var timeUntilSunset = nextSunset.getTime() - nowMs;
+
+            // Target time label
+            sunsetTargetEl.textContent = 'Sunlight ends at: ' + formatClockTime(nextSunset, false);
+            
+            if (timeUntilSunset > 0) {
+                sunsetCountdownEl.textContent = formatTimeRemaining(timeUntilSunset);
+            } else {
+                sunsetCountdownEl.textContent = 'Passed!';
+            }
+        }
+
+        // Start the countdown updates immediately without relying on window.onload
+        if (typeof SunCalc === 'undefined') {
+            console.error("SunCalc.js failed to load.");
+        } else {
+            updateCountdowns();
+            // Use 1-minute interval (60000ms) since seconds were removed from the display
+            setInterval(updateCountdowns, 60000); 
+        }
+    </script>
+</body>
+</html>
+

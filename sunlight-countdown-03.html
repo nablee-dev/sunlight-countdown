@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mountain View Solar Countdown</title>
+    <!-- Removed Tailwind CSS for maximum compatibility -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <!-- Include SunCalc.js library for dynamic solar calculations -->
+    <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.min.js"></script>
+    <style>
+        /* Basic, high-compatibility CSS for older browsers and e-ink displays */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000000; /* Pure black background */
+            color: #FFFFFF; /* Pure white text */
+            margin: 0;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 90vh; /* Use 90vh to avoid scrollbars on some devices */
+            overflow: hidden; /* This will hide any scrollbars */
+            /* ADDED: Hide the mouse cursor */
+            cursor: none;
+        }
+        .main-container {
+            width: 100%;
+            max-width: 800px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        h1 {
+            font-size: 36px;
+            font-weight: 800;
+            margin: 0;
+        }
+        header p {
+            font-size: 18px;
+            margin: 8px 0 0 0;
+        }
+        #current-time-display {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 16px;
+            background-color: #000;
+            padding: 12px;
+            border-radius: 12px;
+            border: 2px solid #FFFFFF;
+            display: inline-block;
+        }
+        .card {
+            background-color: #000;
+            padding: 24px;
+            border-radius: 16px;
+            border: 2px solid #FFFFFF;
+            text-align: center;
+            margin-bottom: 32px; /* Space between cards */
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+        .card-header svg {
+            width: 32px;
+            height: 32px;
+            margin-right: 12px;
+        }
+        .card-header h2 {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 0;
+        }
+        .countdown-digits {
+            font-variant-numeric: tabular-nums;
+            font-size: 48px;
+            font-weight: 800;
+            margin: 0;
+        }
+        .target-time {
+            margin-bottom: 16px;
+        }
+        .status-message {
+            margin-top: 8px;
+        }
+        footer {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 40px;
+            padding: 16px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <header>
+            <h1>Solar Countdown</h1>
+            <p>Mountain View, CA (Dynamic Calculation)</p>
+            <div id="current-time-display" class="countdown-digits">
+                Loading...
+            </div>
+        </header>
+
+        <!-- Countdown Cards Grid (will stack vertically) -->
+        <div>
+            <!-- Sunrise Card -->
+            <div id="sunrise-card" class="card">
+                <div class="card-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                    </svg>
+                    <h2>Next Sunrise</h2>
+                </div>
+                
+                <p id="sunrise-target" class="target-time">Loading Target Time...</p>
+                <p class="countdown-digits" id="sunrise-countdown">--h --m --s</p>
+                <p id="sunrise-message" class="status-message">Time Remaining</p>
+            </div>
+
+            <!-- Sunset Card -->
+            <div id="sunset-card" class="card">
+                <div class="card-header">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                    </svg>
+                    <h2>Next Sunset</h2>
+                </div>
+                
+                <p id="sunset-target" class="target-time">Loading Target Time...</p>
+                <p class="countdown-digits" id="sunset-countdown">--h --m --s</p>
+                <p id="sunset-message" class="status-message">Time Remaining</p>
+            </div>
+        </div>
+
+        <footer>
+            *Times are dynamically calculated for Mountain View, CA ($\text{Lat}: 37.3861^{\circ}$, $\text{Lon}: -122.0839^{\circ}$) using SunCalc.js.
+        </footer>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        // Coordinates for Mountain View, CA
+        var MV_LAT = 37.3861;
+        var MV_LON = -122.0839;
+        // Manual offset for Mountain View (PDT is UTC-7, used for Oct 11, 2025)
+        var PACIFIC_OFFSET_HOURS = -7; 
+
+        // --- DOM Elements ---
+        var currentTimeEl = document.getElementById('current-time-display');
+        var sunriseTargetEl = document.getElementById('sunrise-target');
+        var sunriseCountdownEl = document.getElementById('sunrise-countdown');
+        var sunriseMessageEl = document.getElementById('sunrise-message');
+        var sunsetTargetEl = document.getElementById('sunset-target');
+        var sunsetCountdownEl = document.getElementById('sunset-countdown');
+        var sunsetMessageEl = document.getElementById('sunset-message');
+
+        /**
+         * Helper function to pad single digits for better compatibility.
+         */
+        function pad(num) {
+            return num < 10 ? '0' + num : String(num);
+        }
+        
+        /**
+         * Returns a Date object representing the correct local time in Mountain View,
+         * compensating for the browser potentially reporting UTC time, by applying
+         * the manual PACIFIC_OFFSET_HOURS to the UTC time components.
+         * We use UTC getters on this manually shifted date to ensure consistent time.
+         * @param {Date} date - The current system Date object.
+         * @returns {Date} The corrected local Date object for the Pacific Timezone.
+         */
+        function getPacificDate(date) {
+            // Calculate the actual local time in milliseconds based on UTC-7 offset
+            var localTimeMs = date.getTime() + (PACIFIC_OFFSET_HOURS * 60 * 60 * 1000);
+            return new Date(localTimeMs);
+        }
+
+        /**
+         * Formats the time part of a Date object (HH:MM:SS or HH:MM).
+         * @param {Date} date - The date object.
+         * @param {boolean} includeSeconds - Whether to include seconds.
+         * @returns {string} Formatted time string (e.g., "15:30:00").
+         */
+        function formatClockTime(date, includeSeconds) {
+            if (!date || isNaN(date.getTime())) return 'N/A';
+            
+            // Get the corrected Pacific Time Date object
+            var pacificDate = getPacificDate(date);
+            
+            var hours = pad(pacificDate.getUTCHours());
+            var minutes = pad(pacificDate.getUTCMinutes());
+            
+            var timeString = hours + ':' + minutes;
+            
+            if (includeSeconds) {
+                var seconds = pad(pacificDate.getUTCSeconds());
+                timeString += ':' + seconds;
+            }
+            return timeString;
+        }
+
+        /**
+         * Formats the date and time for the main clock display.
+         * @param {Date} date - The current system Date object.
+         * @returns {string} Formatted string, e.g., "Sat, Oct 11, 2025 15:30:00 PDT"
+         */
+        function formatCurrentDateTime(date) {
+            var DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            var MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            
+            var pacificDate = getPacificDate(date);
+            
+            var dayName = DAYS_SHORT[pacificDate.getUTCDay()];
+            var monthName = MONTHS_SHORT[pacificDate.getUTCMonth()];
+            var dayOfMonth = pacificDate.getUTCDate();
+            var year = pacificDate.getUTCFullYear();
+            
+            var time = formatClockTime(date, false); // Removed seconds from this display as requested earlier
+            
+            // Format: "Sat, Oct 11, 2025 15:30 PDT"
+            return dayName + ', ' + monthName + ' ' + dayOfMonth + ', ' + year + ' ' + time + ' PDT';
+        }
+
+        /**
+         * Formats milliseconds into H:M string (seconds removed).
+         */
+        function formatTimeRemaining(ms) {
+            if (ms < 0) {
+                return 'Passed!';
+            }
+            // Seconds are removed, so we calculate directly to minutes
+            var totalMinutes = Math.floor(ms / (1000 * 60));
+            var minutes = totalMinutes % 60;
+            var hours = Math.floor(totalMinutes / 60);
+
+            return pad(hours) + 'h ' + pad(minutes) + 'm';
+        }
+
+        /**
+         * Calculates the next sunrise and sunset.
+         */
+        function getTargetTimes(now) {
+            var lat = MV_LAT;
+            var lon = MV_LON;
+
+            // Get today's solar times
+            var timesToday = SunCalc.getTimes(now, lat, lon);
+            var timesTomorrow = null;
+
+            var nextSunrise = timesToday.sunrise;
+            var nextSunset = timesToday.sunset;
+
+            // --- Handle Sunrise Rollover ---
+            if (nextSunrise === undefined || now.getTime() >= nextSunrise.getTime()) {
+                if (!timesTomorrow) {
+                    var tomorrow = new Date(now);
+                    tomorrow.setDate(now.getDate() + 1);
+                    timesTomorrow = SunCalc.getTimes(tomorrow, lat, lon);
+                }
+                nextSunrise = timesTomorrow.sunrise;
+            }
+
+            // --- Handle Sunset Rollover ---
+            if (nextSunset === undefined || now.getTime() >= nextSunset.getTime()) {
+                if (!timesTomorrow) {
+                    var tomorrow = new Date(now);
+                    tomorrow.setDate(now.getDate() + 1);
+                    timesTomorrow = SunCalc.getTimes(tomorrow, lat, lon);
+                }
+                nextSunset = timesTomorrow.sunset;
+            }
+            
+            if (!nextSunrise) {
+                console.error("Sunrise time could not be calculated.");
+                nextSunrise = new Date(now.getTime() + 86400000);
+            }
+            if (!nextSunset) {
+                console.error("Sunset time could not be calculated.");
+                nextSunset = new Date(now.getTime() + 86400000);
+            }
+
+            return { nextSunrise: nextSunrise, nextSunset: nextSunset };
+        }
+
+        /**
+         * Main function to update all countdowns.
+         */
+        function updateCountdowns() {
+            var now = new Date();
+            
+            // Manually format the current time display with PDT offset
+            currentTimeEl.textContent = formatCurrentDateTime(now);
+
+            // Get dynamically calculated target times
+            var targets = getTargetTimes(now);
+            var nextSunrise = targets.nextSunrise;
+            var nextSunset = targets.nextSunset;
+
+            // --- Sunrise Countdown ---
+            var timeUntilSunrise = nextSunrise.getTime() - now.getTime();
+            
+            // Use manual formatting for target time (HH:MM)
+            sunriseTargetEl.textContent = 'Target: ' + formatClockTime(nextSunrise, false);
+
+            if (timeUntilSunrise > 0) {
+                sunriseCountdownEl.textContent = formatTimeRemaining(timeUntilSunrise);
+                sunriseMessageEl.textContent = "Time Remaining";
+            } else {
+                sunriseCountdownEl.textContent = 'Passed!';
+                sunriseMessageEl.textContent = "Updating next target...";
+            }
+
+            // --- Sunset Countdown ---
+            var timeUntilSunset = nextSunset.getTime() - now.getTime();
+
+            // Use manual formatting for target time (HH:MM)
+            sunsetTargetEl.textContent = 'Target: ' + formatClockTime(nextSunset, false);
+            
+            if (timeUntilSunset > 0) {
+                sunsetCountdownEl.textContent = formatTimeRemaining(timeUntilSunset);
+                sunsetMessageEl.textContent = "Time Remaining";
+            } else {
+                sunsetCountdownEl.textContent = 'Passed!';
+                sunsetMessageEl.textContent = "Updating next target...";
+            }
+        }
+
+        // Start the countdown updates immediately without relying on window.onload
+        if (typeof SunCalc === 'undefined') {
+            console.error("SunCalc.js failed to load.");
+        } else {
+            updateCountdowns();
+            // Use 1-minute interval (60000ms) since seconds were removed from the display
+            setInterval(updateCountdowns, 60000); 
+        }
+    </script>
+</body>
+</html>
+
